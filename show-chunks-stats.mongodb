@@ -1,0 +1,75 @@
+const DB_NAME = "bankstatement";
+const ITEMS_COLL = "items";
+const OPTIONAL_BALANCE_COLL = "balances";
+print()
+printCollStats(DB_NAME, ITEMS_COLL);
+print("\n------------\n");
+db = db.getSiblingDB(DB_NAME);
+const balancesCollExists = db[OPTIONAL_BALANCE_COLL].findOne({}, {"_id": 1});
+
+if (balancesCollExists) {
+  printCollStats(DB_NAME, OPTIONAL_BALANCE_COLL);
+} else {
+  print(`Statistics for '${DB_NAME}.${OPTIONAL_BALANCE_COLL}' not generated as this collection does not exist`);
+}
+
+"See the system-out"
+print()
+
+
+//
+// Print the chunk split stats for a specific collection.
+// 
+function printCollStats(dbName, collName) {
+  db = db.getSiblingDB("config");
+  const rscName = `${dbName}.${collName}`;
+
+  const pipeline = [
+    {"$match": {
+      "_id": rscName,
+    }},
+
+    {"$lookup": {
+      "from": "chunks",
+      "localField": "uuid",
+      "foreignField": "uuid",
+      "as": "chunks",
+    }},
+    
+    {"$unwind": {
+      "path": "$chunks",
+    }},
+
+    {"$group": {
+      "_id": "$chunks.shard",
+      "chunksCount": {"$sum": 1},
+      "chunks": {"$push": {"min": "$chunks.min", "max": "$chunks.max"}},
+    }}, 
+
+    {"$set": {
+      "shard": "$_id",
+      "_id": "$$REMOVE",
+    }},    
+    
+    {"$sort": {
+      "shard": 1,
+    }},   
+  ];
+
+  const shardChunkSplits = db.collections.aggregate(pipeline).toArray();
+  print(`Collection '${rscName}' - shard chunk splits:`);
+  print(JSON.stringify(shardChunkSplits, "", 2));
+  print("\n")
+
+  const chunksCount = shardChunkSplits.reduce(
+    (accumulator, currentShard) => accumulator + currentShard.chunksCount,
+    0,
+  );
+
+  print(`Collection '${rscName}' - total number of chunks: ${chunksCount}`);
+  db = db.getSiblingDB(dbName);
+  const collShardsStats = db[collName].stats().shards;
+  Object.keys(collShardsStats).forEach(shardName => {
+    print(`Collection '${rscName}' - shard '${shardName}' docs count: ${collShardsStats[shardName].count}`);
+  });
+}

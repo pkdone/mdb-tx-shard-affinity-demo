@@ -1,0 +1,173 @@
+const process = require('process');
+
+// Constants
+const DB_NAME = "bankstatement";
+const ITEMS_COLL = "items";
+const OPTIONAL_BALANCE_COLL = "balances";
+const OUT_OF_RANGE_ACC_ID = 100000000;
+const ACCOUNTS_QUANTITY = 100;
+const START_DAY = ISODate("2023-01-01T00:00:00Z"); 
+const MAX_DAYS = 30;
+const START_HOUR_EACH_DAY = 9;
+const NUM_PAYMENTS_PER_TX = 2;
+
+// See if optional environment var 'AFFINITY' has been specified with the value "true"
+const optionalEnvVar = process.env["AFFINITY"];
+const promoteTxShardAffinity = (optionalEnvVar && optionalEnvVar.trim().toLowerCase() == "true");
+print(`\n${promoteTxShardAffinity ? "T": "NO t"}ransaction shard affinity requested`);
+
+// Get handles on DB, collection and Tx session for each collection
+const balancesCollName = promoteTxShardAffinity ? ITEMS_COLL : OPTIONAL_BALANCE_COLL;
+const balancesNamespace = `${DB_NAME}.${balancesCollName}`;
+const itemsNamespace = `${DB_NAME}.${ITEMS_COLL}`;
+db = db.getSiblingDB(DB_NAME);
+db.dropDatabase();
+const balancesColl = db[balancesCollName];
+const itemsColl = db[ITEMS_COLL];
+const shardKey =  { accountId: 1, type: 1, timestamp: 1 };
+
+// Split collection(s) accross both shards
+if (promoteTxShardAffinity) {
+  // Do a roughly equal 'items' collection split accross both shards
+  const itemsSplitDoc = { accountId: (OUT_OF_RANGE_ACC_ID / 2), type: "", timestamp: ISODate("1970-01-01T00:00:00Z") };
+  shardCollBalancingChunks(itemsColl, itemsNamespace, shardKey, itemsSplitDoc);
+} else {
+  // Artificially force all 'items' to be on one shard and all 'balances' to be on the other shard
+  const itemsSplitDoc = { accountId: OUT_OF_RANGE_ACC_ID, type: "", timestamp: ISODate("1970-01-01T00:00:00Z") };
+  shardCollBalancingChunks(itemsColl, itemsNamespace, shardKey, itemsSplitDoc);
+  const balancesSplitDoc = { accountId: 0, type: "", timestamp: ISODate("1970-01-01T00:00:00Z") };
+  shardCollBalancingChunks(balancesColl, balancesNamespace, shardKey, balancesSplitDoc);
+}
+
+// Capture before ingestion stats
+const beforeServerStatusTxCommitTypes = db.serverStatus().transactions.commitTypes
+const beforeSingleShardCount = beforeServerStatusTxCommitTypes.singleShard.successful.low;
+const beforeTwoPhaseCommitCount = beforeServerStatusTxCommitTypes.twoPhaseCommit.successful.low;
+const startTime = new Date();
+
+// Insert items and balances into the relevant collection(s)
+ingestDataInsideTransaction(db, ITEMS_COLL, balancesCollName);
+
+// Print summary info
+const endTime = new Date();
+print(`\nFinished in:  ${(endTime.getTime() - startTime.getTime()) / 1000} seconds\n`);
+logCollectionShardStats(itemsColl);
+
+if (promoteTxShardAffinity) {
+  print(`Collection '${OPTIONAL_BALANCE_COLL}': n/a\n`);
+} else {
+  logCollectionShardStats(balancesColl);
+}
+
+print(`Transaction processing statistics`);
+print(`  - transaction shard affinity enabled:  ${promoteTxShardAffinity}`);
+const itemsAfterServerStatusTxCommitTypes = db.serverStatus().transactions.commitTypes
+const itemsAfterSingleShardCount = itemsAfterServerStatusTxCommitTypes.singleShard.successful.low;
+const itemsAfterTwoPhaseCommitCount = itemsAfterServerStatusTxCommitTypes.twoPhaseCommit.successful.low;
+print(`  - single-shard transactions executed:  ${itemsAfterSingleShardCount - beforeSingleShardCount}`);
+print(`  - two-phase-commit transactions executed:  ${itemsAfterTwoPhaseCommitCount - beforeTwoPhaseCommitCount}`);
+print();
+
+
+//
+// Wrap a session around te function which will generate and ingest data a MongoDB database.
+// 
+function ingestDataInsideTransaction(db, itemsCollName, balancesCollName) {
+  const session = db.getMongo().startSession({ readPreference: { mode: "primary" } });
+
+  try {
+      const balancesTxColl = session.getDatabase(DB_NAME).getCollection(balancesCollName);
+      const itemsTxColl = session.getDatabase(DB_NAME).getCollection(itemsCollName);
+      ingestData(session, itemsTxColl, balancesTxColl);
+  } finally {
+    session.endSession();
+  }
+}
+
+
+//
+// For each day for each bank account use a seperate DB transaction to add a number of bank 
+// statenets items and update the correspinding balance for the account.
+// 
+function ingestData(session, itemsTxColl, balancesTxColl) {
+  for (let days = 0; days < MAX_DAYS; days++) { 
+    const currentDay = new Date((new Date(START_DAY.getTime())).setDate(START_DAY.getDate() + days));
+
+    for (let accIdSequence = 1; accIdSequence <= ACCOUNTS_QUANTITY; accIdSequence++) {
+      // Generate an accountId from next series in a range
+      const accountId = getNthNumberInSeries(OUT_OF_RANGE_ACC_ID, ACCOUNTS_QUANTITY, accIdSequence);
+
+      try{
+        session.startTransaction({readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' }});
+        let total = 0;  
+
+        // Insert each new bank transaction item for this account into the 'items' collection
+        for (let hours = 0; hours < NUM_PAYMENTS_PER_TX; hours++) {
+          const currentDayHour = new Date((new Date(currentDay.getTime())).setHours(START_HOUR_EACH_DAY + hours));
+          const value = Math.floor(Math.random() * 198) - 99; // Random value between -100 and +100
+          total += value;
+          itemsTxColl.insertOne({ accountId, type: "ITEM", timestamp: currentDayHour, value });
+        }
+
+        // Update total balance for this account in either the 'items' or 'balances' collection
+        const upsertFilter = { accountId, type: "BALANCE", timestamp: START_DAY };
+        const upsertUpdate = { $inc: { value: total }};
+        const upsertOptions = { upsert: true };
+        balancesTxColl.updateOne(upsertFilter, upsertUpdate, upsertOptions);        
+        session.commitTransaction(); 
+      } catch (error) {
+        session.abortTransaction();
+        console.error(error, error.stack);
+        throw error;
+      }
+    }
+  }
+}
+
+
+//
+// Balance chunks across shards for a collection.
+// 
+function shardCollBalancingChunks(coll, namespace, shardKey, splitDoc) {
+  sh.shardCollection(namespace, shardKey);
+  const { secondShard } = getCollectionShardNames(coll);
+  db.adminCommand({ split: namespace, middle: splitDoc });
+  sh.moveChunk(namespace, splitDoc, secondShard);
+  sleep(5); // Sleep for a while to to allow chunk move to finish
+}
+
+
+//
+//  Print statistics of document distribution across the shards for a collection.
+// 
+function logCollectionShardStats(coll) {
+  const shardsNames = getCollectionShardNames(coll);
+  const [ firstShard, secondShard ] = Object.values(shardsNames).sort();
+  print(`Collection '${coll._name}' statistics:`);
+  const collStats = coll.stats();
+  print(`  - total docs count:  ${collStats.count}`);
+  const collShardStats = collStats.shards;
+  print(`  - ${firstShard} docs count:  ${collShardStats[firstShard].count}`);
+  print(`  - ${secondShard} docs count:  ${collShardStats[secondShard].count}`);
+  print();
+}
+
+
+//
+// Retrieves the first and second names of the shards for a collection.
+// 
+function getCollectionShardNames(coll) {
+  const shardNames = db.getSiblingDB("config").shards.find().toArray().map(shard => shard._id);
+  const firstShard = Object.getOwnPropertyNames(coll.stats().shards)[0];
+  const secondShard = shardNames.find(element => element !== firstShard);
+  return { firstShard, secondShard };
+}
+
+
+//
+// Retrieves the 'n'th number in a series in the range of 1 to the integer preceding,
+// 'maxExclusiveValue' where there are 'quantity' possible numbers allowed in the series.
+// 
+function getNthNumberInSeries(maxExclusiveValue, quantity, n) {
+  return Math.floor(n / quantity * (maxExclusiveValue - 1));
+}

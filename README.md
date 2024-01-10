@@ -1,4 +1,4 @@
-# MongoDB Transacton Shard Affinity Demo
+# MongoDB Transaction Shard Affinity Demo
 
 This project provides a basic example of achieving shard affinity for transactions to optimise the performance of an application that applies multi-record transactions in a sharded MongoDB database cluster. The example is based on a contrived bank account balances and bank transactions maintenance use case where every evening, each bank account holder has their bank transactions from the last day persisted and their corresponding account balance updated atomically. As a result of wrapping this in a transaction, the failure scenario can't occur where the payments have been ingested into the database, but the balance was not updated.
 

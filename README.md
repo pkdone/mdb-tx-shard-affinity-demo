@@ -14,7 +14,7 @@ Due to the potential need to hold both bank transaction items and bank account b
 
 * You have a local or remote MongoDB sharded cluster containing 2 Shards available to use, accessible from your workstation. Note:
     - You can't use a MongoDB Atlas hosted Database Cluster because Atlas [doesn't allow the use of](https://www.mongodb.com/docs/atlas/unsupported-commands/) some of the sharding commands required by this demo.
-    - For convenience, you could use the [sharded-mongodb-docker](sharded-mongodb-docker) project to easily run a MongoDB sharded cluster in a set of Docker containers on your workstation.
+    - For convenience, you could use the [sharded-mongodb-docker](https://github.com/pkdone/sharded-mongodb-docker) project to easily run a MongoDB sharded cluster in a set of Docker containers on your workstation.
 * The [MongoDB Shell](https://docs.mongodb.com/mongodb-shell/install/) is installed on your workstation .
 
 

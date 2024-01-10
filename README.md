@@ -9,6 +9,8 @@ This project provides a demo MongoDB Shell script, which can be run in one of tw
 
 Due to the potential need to hold both bank transaction items and bank account balances in the same collection (in the 'affinity' mode), each document includes a `type` field with a value of `ITEM` or `BALANCE`. This `type` field isn't really needed for the 'non-affinity' mode but is nevertheless always included in the documents to keep things simple and consistent. 
 
+This project is not intended as a recommendation on how to model data in MongoDB for optimum scalability today. You should NOT adopt this data model or something similar today. The project's purpose is to highlight some of the potential (but yet to be validated) performance benefits that could be yielded if MongoDB supported the capability of shard affinity across multiple collections, which it does not today.
+
 
 ## Prerequisites
 

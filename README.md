@@ -20,7 +20,7 @@ Due to the potential need to hold both bank transaction items and bank account b
 
 ## Steps To Run
 
-1. PERFORM NON-AFFINITY TEST: From the terminal, execute the following MongoDB Shell script to configure two sharded collections, `items` (i.e.,  bank account transactions) and balances (i.e.,  bank account balances) and loop ingesting data using a transaction for each batch of items and balances updates.
+1. **PERFORM NON-AFFINITY TEST**: From the terminal, execute the following MongoDB Shell script to configure two sharded collections, `items` (i.e.,  bank account transactions) and balances (i.e.,  bank account balances) and loop ingesting data using a transaction for each batch of items and balances updates.
 
     ```console
     mongosh "mongodb://localhost:27017/" mdb-tx-shard-affinity-demo.mongodb
@@ -28,7 +28,7 @@ Due to the potential need to hold both bank transaction items and bank account b
 
    Note: If you do not have a `mongos` process listening on `localhost:27017`, correct the MongoDB URL in the above command before running the command.
 
-1. PERFORM AFFINITY TEST: From the terminal, execute the following command and MongoDB Shell script to configure one sharded collection, `items` to hosl before bank account transactions and balances, with transaction shard affinity being simulated.
+1. **PERFORM AFFINITY TEST**: From the terminal, execute the following command and MongoDB Shell script to configure one sharded collection, `items` to hosl before bank account transactions and balances, with transaction shard affinity being simulated.
 
     ```console
     export AFFINITY=true

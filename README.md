@@ -7,7 +7,7 @@ This project provides a demo MongoDB Shell script, which can be run in one of tw
   1. In 'non-affinity' mode, new bank transactions are placed into an `items` collection, and the corresponding bank account balance is updated with the new end-of-day value in the `balances` collection. The script intentionally forces all bank transaction items to persist in one shard only and all the bank account balances to persist on the other shard. This helps to show the impact when all subsequent transactions invoked by the script result in 'two-phase-commit' transactions. 
   1. In 'affinity' mode, new bank transactions and the corresponding bank account balance are placed into a single combined collection (the `items` collection). The script ensures the single collection's documents are evenly balanced across both shards. This helps to show the impact when all subsequent transactions invoked by the script result in  'single-shard' transactions.
 
-Due to the potential need to hold both bank transaction items and bank account balances in the same collection (in the 'affinity' mode), each document includes a `type` field with a value of `ITEM` or `BALANCE`. This `type` field isn't really needed for the 'non-affinity' mode but is nevertheless always included in the documents to keep things simple and consistent. 
+Due to the potential need to hold both bank debit/credit items and bank account balances in the same collection (in the 'affinity' mode), each document includes a `type` field with a value of `ITEM` or `BALANCE`. This `type` field isn't really needed for the 'non-affinity' mode but is nevertheless always included in the documents to keep things simple and consistent. 
 
 This project is not intended as a recommendation on how to model data in MongoDB for optimum scalability today. You should NOT adopt this data model or something similar today. The project's purpose is to highlight some of the potential (but yet to be validated) performance benefits that could be yielded if MongoDB supported the capability of shard affinity across multiple collections, which it does not today.
 
@@ -17,12 +17,12 @@ This project is not intended as a recommendation on how to model data in MongoDB
 * You have a local or remote MongoDB sharded cluster containing 2 Shards available to use, accessible from your workstation. Note:
     - You can't use a MongoDB Atlas hosted Database Cluster because Atlas [doesn't allow the use of](https://www.mongodb.com/docs/atlas/unsupported-commands/) some of the sharding commands required by this demo.
     - For convenience, you could use the [sharded-mongodb-docker](https://github.com/pkdone/sharded-mongodb-docker) project to easily run a MongoDB sharded cluster in a set of Docker containers on your workstation.
-* The [MongoDB Shell](https://docs.mongodb.com/mongodb-shell/install/) is installed on your workstation .
+* The [MongoDB Shell](https://docs.mongodb.com/mongodb-shell/install/) is installed on your workstation.
 
 
 ## Steps To Run
 
-1. **PERFORM NON-AFFINITY TEST**: From the terminal, execute the following MongoDB Shell script to configure two sharded collections, `items` (i.e.,  bank account transactions) and balances (i.e.,  bank account balances) and loop ingesting data using a transaction for each batch of items and balances updates.
+1. **PERFORM NON-AFFINITY TEST**: From the terminal, execute the following MongoDB Shell script to configure two sharded collections, `items` (i.e.,  bank account debit/credit records) and balances (i.e.,  bank account balances) and loop ingesting data using a transaction for each batch of items and balances updates.
 
     ```console
     mongosh "mongodb://localhost:27017/" mdb-tx-shard-affinity-demo.mongodb
@@ -30,7 +30,7 @@ This project is not intended as a recommendation on how to model data in MongoDB
 
    Note: If you do not have a `mongos` process listening on `localhost:27017`, correct the MongoDB URL in the above command before running the command.
 
-1. **PERFORM AFFINITY TEST**: From the terminal, execute the following command and MongoDB Shell script to configure one sharded collection, `items` to hosl before bank account transactions and balances, with transaction shard affinity being simulated.
+1. **PERFORM AFFINITY TEST**: From the terminal, execute the following command and MongoDB Shell script to configure one sharded collection, `items` to host both bank account debit/credit records and balances, with transaction shard affinity being simulated.
 
     ```console
     export AFFINITY=true
@@ -42,8 +42,8 @@ This project is not intended as a recommendation on how to model data in MongoDB
 
 ## Optional Help
 
-1. To see how chunks are partioned in the sharded collections, once you've run the MongoDB Shell `mdb-tx-shard-affinity-demo.mongodb` script, from the terminal, execute the following command and MongoDB Shell script to output the relevant collecitons' statistics. 
+To see how chunks are partitioned in the sharded collections, once you've run the MongoDB Shell `mdb-tx-shard-affinity-demo.mongodb` script, from the terminal, execute the following command and MongoDB Shell script to output the statistics of the relevant collections (changing the URL if necessary). 
 
-    ```console
-    mongosh $MDB_CONNECTION_STRING show-chunks-stats.mongodb
-    ```
+```console
+mongosh "mongodb://localhost:27017/" show-chunks-stats.mongodb
+```
